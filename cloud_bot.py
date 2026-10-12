@@ -224,7 +224,7 @@ def update_live_wallet_balance():
                     if bal_str:
                         live_equity_usd = float(bal_str)
                         last_balance_check = now
-                        log(f"[WALLET SYNC] Live Equity: ${live_equity_usd:.2f} USD (~₹{live_equity_usd * 85:.0f} INR)")
+                        log(f"[WALLET SYNC] Live Equity: ${live_equity_usd:.2f} USD (~Rs. {live_equity_usd * 85:.0f} INR)")
     except Exception as e:
         log(f"[WALLET SYNC EXCEPTION] {e}")
     finally:
@@ -453,6 +453,29 @@ def place_delta_bracket_order(symbol, side, entry_p, sl_p, tp_p, strategy_name, 
     log(f"[DELTA RESPONSE] {resp_text if resp_text else 'No response received'}")
     return result
 
+def is_asset_trading_allowed(symbol_label, dt_ist):
+    hour = dt_ist.hour
+    day = dt_ist.weekday()  # 0=Mon, 5=Sat, 6=Sun
+    
+    if "BTC" in symbol_label:
+        # Bitcoin Rule 1: Sunday OFF (avoids -4.6 R weekend liquidity drain)
+        if day == 6:
+            return False, "Sunday Market Filter (Protects against Sunday liquidity drain)"
+        # Bitcoin Rule 2: Golden Hours Only (Morning 6AM-12PM & Evening 6PM-12AM IST)
+        # Filters out 12AM-6AM sleep chop (-9 R) & 12PM-6PM afternoon chop (-5.6 R)
+        if not ((6 <= hour < 12) or (18 <= hour < 24)):
+            return False, f"Outside Golden Institutional Hours ({hour}:00 IST). Active: 6AM-12PM & 6PM-12AM"
+        return True, "Active Golden Session"
+        
+    elif "BNB" in symbol_label:
+        # BNB Rule: All 7 days active (Saturday & Sunday generate +22 R!)
+        # Avoids 12AM-6AM dead sleep hours
+        if 0 <= hour < 6:
+            return False, f"Late Night Low Volume ({hour}:00 IST). Active: 6 AM to 12 AM IST"
+        return True, "Active BNB Session"
+        
+    return True, "Default Active"
+
 def check_15m_scob_retest_setup(ticker, symbol_label, rr=2.0, unit=0.001, max_sl_cap=1.2):
     try:
         macro_regime = get_1h_macro_regime(ticker)
@@ -477,8 +500,8 @@ def check_15m_scob_retest_setup(ticker, symbol_label, rr=2.0, unit=0.001, max_sl
         
         # Look at last 3 closed candles
         for i in range(n-4, n-1):
-            cur_hour_ist = df_ist[i].hour
-            if not ENABLE_24_7 and not (7 <= cur_hour_ist < 23):
+            allowed, reason = is_asset_trading_allowed(symbol_label, df_ist[i])
+            if not allowed:
                 continue
                 
             bar_time = str(dates[i])
@@ -583,8 +606,8 @@ def check_1h_scob_setup(ticker, symbol_label, rr=2.0, unit=0.001, max_sl_cap=1.2
         placed = load_placed_orders()
         
         for i in range(n-4, n-1):
-            cur_hour_ist = df_ist[i].hour
-            if not ENABLE_24_7 and not (7 <= cur_hour_ist < 23):
+            allowed, reason = is_asset_trading_allowed(symbol_label, df_ist[i])
+            if not allowed:
                 continue
                 
             bar_time = str(dates[i])
@@ -703,10 +726,14 @@ class HealthHandler(BaseHTTPRequestHandler):
         target_risk = max(0.50, round(live_equity_usd * RISK_PCT_PER_TRADE, 2))
         resp = {
             "status": "ONLINE",
-            "bot": "DELTA_V10.2_DUO_ELITE",
+            "bot": "DELTA_V10.3_GOLDEN_SESSION",
             "portfolio": ["BTCUSD", "BNBUSD"],
+            "schedule": {
+                "BTC": "Mon-Sat (Sunday OFF) | Golden Hours: 6AM-12PM & 6PM-12AM IST",
+                "BNB": "Mon-Sun (All 7 Days) | 6AM-12AM IST"
+            },
             "engines": ["15m_SCOB_RETEST_TRINITY", "1h_MELONA_SWING"],
-            "mode": "24/7_NON_STOP",
+            "hard_risk_cap": "Max 3 contracts strictly",
             "live_equity_usd": f"${live_equity_usd:.2f}",
             "target_risk_usd": f"${target_risk:.2f}",
             "max_concurrent_positions": MAX_CONCURRENT_POSITIONS,
