@@ -43,8 +43,8 @@ MAX_CONCURRENT_POSITIONS = 3       # Max 3 concurrent positions (preserves margi
 ENABLE_24_7 = True                 # 24/7 Non-stop market execution
 MIN_RISK_PCT = 0.20               # 0.20% minimum risk buffer for tight stops
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8782055700:AAH2z1dlDuCjGr3JH6wf-BrLDgCFP9X1WtE")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "833498138")
 
 IST_TZ = pytz.timezone('Asia/Kolkata')
 
