@@ -75,17 +75,6 @@ PORTFOLIO_CONFIG = [
         "contract_unit": 0.1,      # 0.1 BNB per contract
         "max_sl_cap": 1.0,         # Cap at 1.0%
         "intervals": ["15m", "1h"]
-    },
-    {
-        "name": "Ethereum",
-        "ticker": "ETH-USD",
-        "delta_symbol": "ETHUSD",
-        "strategy": "SCOB_RETEST_TRINITY",
-        "candle_type": "NORMAL",
-        "rr": 2.0,
-        "contract_unit": 0.001,    # 0.001 ETH per contract on Delta Exchange
-        "max_sl_cap": 1.2,         # Cap at 1.2%
-        "intervals": ["15m", "1h"]
     }
 ]
 
@@ -365,8 +354,7 @@ def calculate_dynamic_size(symbol_label, risk_distance, contract_unit):
     target_risk = max(0.50, round(live_equity_usd * RISK_PCT_PER_TRADE, 2))
     risk_per_contract = risk_distance * contract_unit
     contracts = int(round(target_risk / risk_per_contract))
-    max_contracts = 250 if "ETH" in symbol_label else 10
-    return max(1, min(max_contracts, contracts))
+    return max(1, min(3, contracts))
 
 def place_delta_bracket_order(symbol, side, entry_p, sl_p, tp_p, strategy_name, candle_type, rr_ratio, size, risk_usd, tf="15m"):
     risk_dollars = abs(entry_p - sl_p)
@@ -715,8 +703,8 @@ class HealthHandler(BaseHTTPRequestHandler):
         target_risk = max(0.50, round(live_equity_usd * RISK_PCT_PER_TRADE, 2))
         resp = {
             "status": "ONLINE",
-            "bot": "DELTA_V10.1_TRIO_TITAN",
-            "portfolio": ["BTCUSD", "BNBUSD", "ETHUSD"],
+            "bot": "DELTA_V10.2_DUO_ELITE",
+            "portfolio": ["BTCUSD", "BNBUSD"],
             "engines": ["15m_SCOB_RETEST_TRINITY", "1h_MELONA_SWING"],
             "mode": "24/7_NON_STOP",
             "live_equity_usd": f"${live_equity_usd:.2f}",
