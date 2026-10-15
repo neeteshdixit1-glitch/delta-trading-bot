@@ -30,6 +30,10 @@ DB_FILE = "placed_orders.json"
 ARENA_DB_FILE = "paper_arena.json"
 LOG_FILE = "cloud_autotrader.log"
 
+# Permanent Cloud Persistence (survives Render restarts)
+REDIS_URL = "https://lucky-viper-162527.upstash.io"
+REDIS_TOKEN = "gQAAAAAAAnrfAQIgcDIyYzVjMTQ2MDQyNTA0MWQ4ODZmMzNjYzg4MGI5ZjljNw"
+
 DEFAULT_RISK_USD = 0.35            # Target risk per trade ($0.35 USD ~ Rs. 30 INR)
 FIXED_CONTRACTS = 3                # Fixed 3 contracts per trade setup
 MAX_CONCURRENT_PER_STRATEGY = 2    # Max 2 open positions per strategy
@@ -161,8 +165,46 @@ def send_telegram_exit_alert(strat_id, symbol, side, outcome, pnl_usd, pnl_r, tf
 # ==============================================================================
 # ARENA STORAGE & ORDER REGISTRATION
 # ==============================================================================
+# ==============================================================================
+# PERMANENT CLOUD STORAGE ENGINE (UPSTASH REDIS)
+# ==============================================================================
+def load_cloud_arena_db():
+    try:
+        headers = {"Authorization": f"Bearer {REDIS_TOKEN}"}
+        r = requests.get(f"{REDIS_URL}/get/arena_state", headers=headers, timeout=5)
+        if r.status_code == 200:
+            val = r.json().get("result")
+            if val:
+                data = json.loads(val)
+                if isinstance(data, dict) and len(data) > 0:
+                    return data
+    except Exception as e:
+        log(f"[REDIS LOAD NOTE] {e}")
+    return None
+
+def save_cloud_arena_db(db):
+    try:
+        with open(ARENA_DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(db, f, indent=2)
+    except Exception:
+        pass
+    try:
+        headers = {"Authorization": f"Bearer {REDIS_TOKEN}"}
+        requests.post(f"{REDIS_URL}/set/arena_state", data=json.dumps(db), headers=headers, timeout=5)
+    except Exception as e:
+        log(f"[REDIS SAVE NOTE] {e}")
+
 def init_arena_db():
-    if not os.path.exists(ARENA_DB_FILE):
+    # 1. Try permanent cloud database first
+    db = load_cloud_arena_db()
+    # 2. Fallback to local file if cloud temporarily unreachable
+    if not db and os.path.exists(ARENA_DB_FILE):
+        try:
+            with open(ARENA_DB_FILE, "r", encoding="utf-8") as f:
+                db = json.load(f)
+        except Exception:
+            db = {}
+    if not db:
         db = {}
         for s_id, s_info in STRATEGIES_DEF.items():
             db[s_id] = {
@@ -177,37 +219,37 @@ def init_arena_db():
                     "net_pnl_usd": 0.0, "net_r": 0.0, "profit_factor": 0.0
                 }
             }
-        save_arena_db(db)
-        return db
-    try:
-        with open(ARENA_DB_FILE, "r", encoding="utf-8") as f:
-            db = json.load(f)
-            for s_id, s_info in STRATEGIES_DEF.items():
-                if s_id not in db:
-                    db[s_id] = {
-                        "id": s_id,
-                        "name": s_info["name"],
-                        "color": s_info["color"],
-                        "desc": s_info["desc"],
-                        "active": [],
-                        "closed": [],
-                        "stats": {
-                            "total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
-                            "net_pnl_usd": 0.0, "net_r": 0.0, "profit_factor": 0.0
-                        }
-                    }
-            return db
-    except Exception:
-        return {}
+    # Ensure all strategies exist
+    for s_id, s_info in STRATEGIES_DEF.items():
+        if s_id not in db:
+            db[s_id] = {
+                "id": s_id,
+                "name": s_info["name"],
+                "color": s_info["color"],
+                "desc": s_info["desc"],
+                "active": [],
+                "closed": [],
+                "stats": {
+                    "total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+                    "net_pnl_usd": 0.0, "net_r": 0.0, "profit_factor": 0.0
+                }
+            }
+    save_arena_db(db)
+    return db
 
 def save_arena_db(db):
-    try:
-        with open(ARENA_DB_FILE, "w", encoding="utf-8") as f:
-            json.dump(db, f, indent=2)
-    except Exception as e:
-        log(f"[ARENA DB SAVE ERROR] {e}")
+    save_cloud_arena_db(db)
 
 def load_placed_orders():
+    try:
+        headers = {"Authorization": f"Bearer {REDIS_TOKEN}"}
+        r = requests.get(f"{REDIS_URL}/get/placed_orders", headers=headers, timeout=5)
+        if r.status_code == 200:
+            val = r.json().get("result")
+            if val:
+                return json.loads(val)
+    except Exception:
+        pass
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f:
@@ -222,6 +264,11 @@ def save_placed_order(key, details):
     try:
         with open(DB_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+    except Exception:
+        pass
+    try:
+        headers = {"Authorization": f"Bearer {REDIS_TOKEN}"}
+        requests.post(f"{REDIS_URL}/set/placed_orders", data=json.dumps(data), headers=headers, timeout=5)
     except Exception:
         pass
 
